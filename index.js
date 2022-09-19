@@ -1,6 +1,6 @@
 import axios from 'axios'
 import express from 'express'
-import cors from 'cors'
+import cron from 'node-cron'
 import * as SolanaWeb3 from '@solana/web3.js'
 import dotenv from "dotenv"
 import bs58 from "bs58"
@@ -8,22 +8,10 @@ import { getOrCreateAssociatedTokenAccount } from '@solana/spl-token';
 import { Metadata } from "@metaplex-foundation/mpl-token-metadata";
 import * as splToken from "@solana/spl-token"
 
-dotenv.config({ path: './config.env' })
+dotenv.config({ path: './.env' })
 
 const app = express()
 app.use(express.json())
-
-// CORS SETUP
-app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    next();
-});
-
-app.use(cors({
-    origin: "*",
-    credentials: true,
-}));
-
 
 // SOLANA CONNECTION SETUP
 const connection = new SolanaWeb3.Connection(
@@ -146,7 +134,7 @@ const stablesTypes = {
 const calculateReward = async (stakeholders) => {
     let stakeholdersRewards = []
     for (let i = 0; i < stakeholders.length; i++) {
-        console.info(`Calculating REWARD for ${stakeholders[i][0]}: Num: ${stakeholders[i][1].length}`)
+        console.info(`Calculating REWARD for ${stakeholders[i][0]}: Total Staked: ${stakeholders[i][1].length}`)
         let rewardObj = {}
         let totalReward = 0
         let stallionStaked = []
@@ -165,8 +153,10 @@ const calculateReward = async (stakeholders) => {
                 }
             }
         }
-        console.info(`${stallionStaked.length} stallions Staked`)
-        console.info(`${stablesStaked.length} stallions Staked`)
+        console.info(`${stallionStaked.length} stallions Staked by ${stakeholders[i][0]}`)
+        console.log(stallionStaked)
+        console.info(`${stablesStaked.length} stables Staked by ${stakeholders[i][0]}`)
+        console.log(stablesStaked)
 
         const stallionsNum = stallionStaked.length
         const stablesNum = stablesStaked.length
@@ -227,7 +217,7 @@ const calculateReward = async (stakeholders) => {
         }
         rewardObj.toAddress = stakeholders[i][0]
         rewardObj.rewardAmount = totalReward
-        console.info(`${i + 1}: REWARD INFO FOR ${stakeholders[i][0]}: ${JSON.parse(rewardObj)}`)
+        console.info(`${i + 1}: REWARD INFO FOR ${stakeholders[i][0]}: ${rewardObj.rewardAmount} tokens`)
         stakeholdersRewards.push(rewardObj)
     }
     return stakeholdersRewards
@@ -235,19 +225,13 @@ const calculateReward = async (stakeholders) => {
 }
 
 
-// ROUTES
-app.get('/api/reward', async (req, res) => {
+// MAIN AIRDROP FUNCTION
+const airdrop = async () => {
     const stakeholders = await getStakeholders()
     console.log("STAKEHOLDERS RECEIVED")
     const stakeholdersRewards = await calculateReward(stakeholders)
+    console.log(stakeholdersRewards)
 
-    res.send({
-        success: true,
-        stakeholdersRewards
-    })
-})
-app.post('/api/transferreward', async (req, res) => {
-    const stakeholdersRewards = req.body.stakeholdersRewards
     const signatures = []
     for (let i = 0; i < stakeholdersRewards.length; i++) {
         const signature = await transferReward(stakeholdersRewards[i].toAddress, stakeholdersRewards[i].rewardAmount)
@@ -256,13 +240,20 @@ app.post('/api/transferreward', async (req, res) => {
             console.info(`Transferred ${stakeholdersRewards[i].rewardAmount} reward tokens to ${stakeholdersRewards[i].toAddress}`)
         }
     }
-    res.send({
-        success: true,
-        signatures
-    })
+    console.log('<<<<>>>>>ALL TRANSACTIONS SUCCESSFULL<<<<>>>>>')
+}
+
+
+cron.schedule("00 30 * * * *", async () => {
+    console.info(`<<<<<-----AIRDROP PROCEDURE INITIATING----->>>>>`)
+
+    await airdrop()
+    let time = new Date()
+    console.info(`<<<<<-----SUCCESSFULL AIRDROP COMPLETED----->>>>>`)
+    console.info(`<<<---DATE: ${time}--->>>`)
+    console.log(`<<<<<-----PLEASE WAIT FOR NEXT AIRDROP----->>>>>`)
+
 })
-
-
 
 // SERVER LISTENING
 const PORT = process.env.PORT || 4000
