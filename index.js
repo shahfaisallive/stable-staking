@@ -9,15 +9,32 @@ import { Metadata } from "@metaplex-foundation/mpl-token-metadata";
 import * as splToken from "@solana/spl-token"
 
 dotenv.config({ path: './.env' })
-
+// dotenv.config({ path: './fake.env' })
 const app = express()
 app.use(express.json())
+
+// CORS SETUP
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    next();
+});
+
+app.use(cors({
+    origin: "*",
+    credentials: true,
+}));
+
+// maintaining time for airdrops check API
+let lastAirdropTime = null
 
 // SOLANA CONNECTION SETUP
 const connection = new SolanaWeb3.Connection(
     process.env.RPC_URL,
     "confirmed"
 )
+// const connection = new SolanaWeb3.Connection(
+//     SolanaWeb3.clusterApiUrl('mainnet-beta')
+// );
 
 // PRIVATE KEY (SECURE IT LATER)
 const privateKey = process.env.PRIVATE_KEY //Wallet of airdropper
@@ -64,16 +81,23 @@ const getMetadata = async (mintAddress) => {
 
 // FUNCTION TO TRANSFER TOKENS
 const transferReward = async (toAddress, amount) => {
+    console.log(`Reward Transfer Initiated...`)
+    const toPublicKey = new SolanaWeb3.PublicKey(toAddress);
+    let toTokenAccount
     try {
-        const toPublicKey = new SolanaWeb3.PublicKey(toAddress);
         // CREATING TOKEN ACCOUNT FOR TRANSACTION
-        const toTokenAccount = await getOrCreateAssociatedTokenAccount(
+        toTokenAccount = await getOrCreateAssociatedTokenAccount(
             connection,
             fromPublicKey,
             tokenPublicKey,
             toPublicKey,
-        );
+        )
+    } catch (error) {
+        console.log(error)
+        console.error(`FAILED!!! couldn't get or create token account for ${toAddress}`)
+    };
 
+    try {
         // SIGNATURE
         const signature = await splToken.transfer(
             connection,
@@ -83,10 +107,11 @@ const transferReward = async (toAddress, amount) => {
             fromWallet.publicKey,
             amount * Math.pow(10, process.env.DECIMALS)
         );
+        // console.log(signature)
         return signature
     } catch (error) {
         console.log(error)
-        console.error(`FAILED!!! Couldn't send reward to ${toAddress}`)
+        console.error(`FAILED!!! Couldn't transfer reward to ${toAddress}`)
     }
 }
 
@@ -224,7 +249,6 @@ const calculateReward = async (stakeholders) => {
 
 }
 
-
 // MAIN AIRDROP FUNCTION
 const airdrop = async () => {
     const stakeholders = await getStakeholders()
@@ -243,16 +267,23 @@ const airdrop = async () => {
     console.log('<<<<>>>>>ALL TRANSACTIONS SUCCESSFULL<<<<>>>>>')
 }
 
-
-cron.schedule("00 30 * * * *", async () => {
+// CRON JOB CONFIGURATION
+cron.schedule("00 00 07 * * *", async () => {
     console.info(`<<<<<-----AIRDROP PROCEDURE INITIATING----->>>>>`)
-
     await airdrop()
     let time = new Date()
+    lastAirdropTime = time
     console.info(`<<<<<-----SUCCESSFULL AIRDROP COMPLETED----->>>>>`)
     console.info(`<<<---DATE: ${time}--->>>`)
     console.log(`<<<<<-----PLEASE WAIT FOR NEXT AIRDROP----->>>>>`)
+})
 
+app.get("/api/airdrop-server", async (req, res) => {
+    res.send({
+        active: true,
+        msg: "Yes! the airdrop is alive and running",
+        lastAirdrop: lastAirdropTime
+    })
 })
 
 // SERVER LISTENING
