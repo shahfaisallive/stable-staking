@@ -314,7 +314,8 @@ app.get("/api/airdrop", async (req, res) => {
         lastAirdrop: lastAirdropTime,
         totalStakeholders: currentRewardAmounts.length,
         currentRewardCount: currentRewardAmounts,
-        noTokenAccountStakeholders: failedStakeholders
+        noTokenAccountStakeholders: failedStakeholders,
+        numberOfNoTokenAccount: failedStakeholders.length
     })
 })
 
