@@ -2,6 +2,7 @@ import axios from 'axios'
 import express from 'express'
 import cron from 'node-cron'
 import * as SolanaWeb3 from '@solana/web3.js'
+import cors from 'cors'
 import dotenv from "dotenv"
 import bs58 from "bs58"
 import { getOrCreateAssociatedTokenAccount } from '@solana/spl-token';
@@ -24,8 +25,10 @@ app.use(cors({
     credentials: true,
 }));
 
-// maintaining time for airdrops check API
+// maintaining data for verifications
 let lastAirdropTime = null
+let currentRewardAmounts = []
+let failedStakeholders = []
 
 // SOLANA CONNECTION SETUP
 const connection = new SolanaWeb3.Connection(
@@ -81,7 +84,10 @@ const getMetadata = async (mintAddress) => {
 
 // FUNCTION TO TRANSFER TOKENS
 const transferReward = async (toAddress, amount) => {
-    console.log(`Reward Transfer Initiated...`)
+    console.log(`<-----Reward Transfer Initiated----->`)
+
+    // Variable for error handling
+    let isTokenAccount = false
     const toPublicKey = new SolanaWeb3.PublicKey(toAddress);
     let toTokenAccount
     try {
@@ -92,9 +98,20 @@ const transferReward = async (toAddress, amount) => {
             tokenPublicKey,
             toPublicKey,
         )
+        if (toTokenAccount) {
+            console.log(`STBL Token Account found for ${toAddress}`)
+            isTokenAccount = true
+        }
     } catch (error) {
-        console.log(error)
-        console.error(`FAILED!!! couldn't get or create token account for ${toAddress}`)
+        isTokenAccount = false
+        let failedObj = {}
+        failedObj.stakeholder = toAddress
+        failedObj.rewardCount = amount
+        failedObj.reason = "No token account found for STBL token"
+        failedStakeholders.push(failedObj)
+
+        // console.log(error)
+        console.error(`FAILED!!! couldn't GET any STBL token account for ${toAddress}`)
     };
 
     try {
@@ -107,11 +124,18 @@ const transferReward = async (toAddress, amount) => {
             fromWallet.publicKey,
             amount * Math.pow(10, process.env.DECIMALS)
         );
-        // console.log(signature)
+        console.log(signature)
         return signature
     } catch (error) {
-        console.log(error)
-        console.error(`FAILED!!! Couldn't transfer reward to ${toAddress}`)
+        if (isTokenAccount) {
+            let failedObj = {}
+            failedObj.stakeholder = toAddress
+            failedObj.rewardCount = amount
+            failedObj.reason = "Unknown transfer error occured"
+            failedStakeholders.push(failedObj)
+            console.log(error)
+            console.error(`FAILED!!! Couldn't transfer reward to ${toAddress}`)
+        }
     }
 }
 
@@ -159,14 +183,14 @@ const stablesTypes = {
 const calculateReward = async (stakeholders) => {
     let stakeholdersRewards = []
     for (let i = 0; i < stakeholders.length; i++) {
-        console.info(`Calculating REWARD for ${stakeholders[i][0]}: Total Staked: ${stakeholders[i][1].length}`)
+        console.info(`<${i + 1}> Calculating REWARD for ${stakeholders[i][0]}: Total Staked: ${stakeholders[i][1].length}`)
         let rewardObj = {}
         let totalReward = 0
         let stallionStaked = []
         let stablesStaked = []
 
         for (let j = 0; j < stakeholders[i][1].length; j++) {
-            console.info(`${j + 1}: Getting METADATA of ${stakeholders[i][1][j].mint}`)
+            console.info(`${j + 1}/${stakeholders[i][1].length}: Getting METADATA of ${stakeholders[i][1][j].mint}`)
             const metadata = await getMetadata(stakeholders[i][1][j].mint)
             if (metadata) {
                 if (metadata.symbol == "SSNFTS") {
@@ -244,6 +268,7 @@ const calculateReward = async (stakeholders) => {
         rewardObj.rewardAmount = totalReward
         console.info(`${i + 1}: REWARD INFO FOR ${stakeholders[i][0]}: ${rewardObj.rewardAmount} tokens`)
         stakeholdersRewards.push(rewardObj)
+        currentRewardAmounts.push(rewardObj)
     }
     return stakeholdersRewards
 
@@ -251,17 +276,21 @@ const calculateReward = async (stakeholders) => {
 
 // MAIN AIRDROP FUNCTION
 const airdrop = async () => {
+    currentRewardAmounts = []
+    failedStakeholders = []
+
     const stakeholders = await getStakeholders()
-    console.log("STAKEHOLDERS RECEIVED")
+    console.log("STAKEHOLDERS RECEIVED", stakeholders.length)
     const stakeholdersRewards = await calculateReward(stakeholders)
     console.log(stakeholdersRewards)
+    currentRewardAmounts = stakeholdersRewards
 
     const signatures = []
     for (let i = 0; i < stakeholdersRewards.length; i++) {
         const signature = await transferReward(stakeholdersRewards[i].toAddress, stakeholdersRewards[i].rewardAmount)
         if (signature) {
             signatures.push(signature)
-            console.info(`Transferred ${stakeholdersRewards[i].rewardAmount} reward tokens to ${stakeholdersRewards[i].toAddress}`)
+            console.info(`${i + 1}/${stakeholdersRewards.length}: Transferred ${stakeholdersRewards[i].rewardAmount} reward tokens to ${stakeholdersRewards[i].toAddress}`)
         }
     }
     console.log('<<<<>>>>>ALL TRANSACTIONS SUCCESSFULL<<<<>>>>>')
@@ -278,11 +307,14 @@ cron.schedule("00 00 07 * * *", async () => {
     console.log(`<<<<<-----PLEASE WAIT FOR NEXT AIRDROP----->>>>>`)
 })
 
-app.get("/api/airdrop-server", async (req, res) => {
+app.get("/api/airdrop", async (req, res) => {
     res.send({
         active: true,
         msg: "Yes! the airdrop is alive and running",
-        lastAirdrop: lastAirdropTime
+        lastAirdrop: lastAirdropTime,
+        totalStakeholders: currentRewardAmounts.length,
+        currentRewardCount: currentRewardAmounts,
+        noTokenAccountStakeholders: failedStakeholders
     })
 })
 
