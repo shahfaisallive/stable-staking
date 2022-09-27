@@ -26,9 +26,11 @@ app.use(cors({
 }));
 
 // maintaining data for verifications
+let airdropActive = false
 let lastAirdropTime = null
 let currentRewardAmounts = []
 let failedStakeholders = []
+let totalStakeholders
 
 // SOLANA CONNECTION SETUP
 const connection = new SolanaWeb3.Connection(
@@ -78,7 +80,9 @@ const getMetadata = async (mintAddress) => {
         return jsonMetadata.data
     } catch (error) {
         console.error(`FAILED!!! Couldn't fetch token metadata for ${mintAddress}`)
-        return false
+        return {
+            symbol: "SSNFTS"
+        }
     }
 }
 
@@ -276,11 +280,13 @@ const calculateReward = async (stakeholders) => {
 
 // MAIN AIRDROP FUNCTION
 const airdrop = async () => {
+    airdropActive = true
     currentRewardAmounts = []
     failedStakeholders = []
 
     const stakeholders = await getStakeholders()
-    console.log("STAKEHOLDERS RECEIVED", stakeholders.length)
+    totalStakeholders = stakeholders.length
+    console.log("STAKEHOLDERS RECEIVED", totalStakeholders)
     const stakeholdersRewards = await calculateReward(stakeholders)
     console.log(stakeholdersRewards)
     currentRewardAmounts = stakeholdersRewards
@@ -293,6 +299,7 @@ const airdrop = async () => {
             console.info(`${i + 1}/${stakeholdersRewards.length}: Transferred ${stakeholdersRewards[i].rewardAmount} reward tokens to ${stakeholdersRewards[i].toAddress}`)
         }
     }
+    airdropActive = false
     console.log('<<<<>>>>>ALL TRANSACTIONS SUCCESSFULL<<<<>>>>>')
 }
 
@@ -309,10 +316,11 @@ cron.schedule("00 00 07 * * *", async () => {
 
 app.get("/api/airdrop", async (req, res) => {
     res.send({
-        active: true,
-        msg: "Yes! the airdrop is alive and running",
+        airdropActive: airdropActive,
+        msg: "The server is running! Next airdrop will happend at 7AM UTC",
         lastAirdrop: lastAirdropTime,
-        totalStakeholders: currentRewardAmounts.length,
+        totalStakeholdersCount: totalStakeholders,
+        rewardCalculationsDone: currentRewardAmounts.length,
         currentRewardCount: currentRewardAmounts,
         noTokenAccountStakeholders: failedStakeholders,
         numberOfNoTokenAccount: failedStakeholders.length
