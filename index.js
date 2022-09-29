@@ -30,7 +30,7 @@ let airdropActive = false
 let lastAirdropTime = null
 let currentRewardAmounts = []
 let failedStakeholders = []
-let totalStakeholders
+let totalStakeholders = null
 
 // SOLANA CONNECTION SETUP
 const connection = new SolanaWeb3.Connection(
