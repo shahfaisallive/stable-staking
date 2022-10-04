@@ -31,6 +31,7 @@ let lastAirdropTime = null
 let currentRewardAmounts = []
 let failedStakeholders = []
 let totalStakeholders = null
+let rewardedStakeholders = null
 
 // SOLANA CONNECTION SETUP
 const connection = new SolanaWeb3.Connection(
@@ -292,8 +293,10 @@ const airdrop = async () => {
     currentRewardAmounts = stakeholdersRewards
 
     const signatures = []
+    rewardedStakeholders = 0
     for (let i = 0; i < stakeholdersRewards.length; i++) {
         const signature = await transferReward(stakeholdersRewards[i].toAddress, stakeholdersRewards[i].rewardAmount)
+        rewardedStakeholders++;
         if (signature) {
             signatures.push(signature)
             console.info(`${i + 1}/${stakeholdersRewards.length}: Transferred ${stakeholdersRewards[i].rewardAmount} reward tokens to ${stakeholdersRewards[i].toAddress}`)
@@ -317,13 +320,14 @@ cron.schedule("00 00 07 * * *", async () => {
 app.get("/api/airdrop", async (req, res) => {
     res.send({
         airdropActive: airdropActive,
-        msg: "The server is running! Next airdrop will happend at 7AM UTC",
+        msg: "The server is running! Next airdrop will happen at 7AM UTC",
         lastAirdrop: lastAirdropTime,
         totalStakeholdersCount: totalStakeholders,
         rewardCalculationsDone: currentRewardAmounts.length,
+        rewardTransactionsCompleted: rewardedStakeholders,
         currentRewardCount: currentRewardAmounts,
-        noTokenAccountStakeholders: failedStakeholders,
-        numberOfNoTokenAccount: failedStakeholders.length
+        failedTransactions: failedStakeholders,
+        numOfFailedTransactions: failedStakeholders.length
     })
 })
 
